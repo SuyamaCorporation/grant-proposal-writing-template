@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>研究助成金申請書テンプレート</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .tab-active { border-bottom: 3px solid #0ea5e9; color: #0284c7; font-weight: 600; }
+    .char-warn { color: #f59e0b; }
+    .char-over { color: #ef4444; }
+    .checklist-done { text-decoration: line-through; opacity: 0.6; }
+    #exportModal { backdrop-filter: blur(4px); }
+    textarea { resize: vertical; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div class="max-w-2xl mx-auto px-4 py-8">
+    <h1 class="text-2xl font-bold text-center text-gray-800 mb-1">📄 研究助成金申請書テンプレート</h1>
+    <p class="text-center text-gray-500 text-sm mb-6">NSF/JSPS型・各セクション字数管理付き</p>
+
+    <!-- Section Nav -->
+    <div class="bg-white rounded-2xl shadow mb-6 overflow-hidden">
+      <div class="flex overflow-x-auto" id="sectionTabs"></div>
+    </div>
+
+    <!-- Section Content -->
+    <div id="sectionContent"></div>
+
+    <!-- Bottom Bar -->
+    <div class="mt-6 flex gap-3">
+      <button onclick="showChecklist()" class="flex-1 bg-sky-100 text-sky-700 font-semibold py-2.5 rounded-xl text-sm hover:bg-sky-200 transition-colors">
+        📋 提出前チェックリスト
+      </button>
+      <button onclick="exportMarkdown()" class="flex-1 bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
+        📤 Markdownエクスポート
+      </button>
+    </div>
+  </div>
+
+  <!-- Checklist Modal -->
+  <div id="checklistModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[80vh] flex flex-col">
+      <div class="flex justify-between items-center p-4 border-b">
+        <h2 class="font-semibold text-gray-800">提出前チェックリスト</h2>
+        <button onclick="closeChecklist()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+      </div>
+      <div class="flex-1 overflow-auto p-4 space-y-3" id="checklistItems"></div>
+    </div>
+  </div>
+
+  <!-- Export Modal -->
+  <div id="exportModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[85vh] flex flex-col">
+      <div class="flex justify-between items-center p-4 border-b">
+        <h2 class="font-semibold text-gray-800">Markdownエクスポート</h2>
+        <button onclick="closeExport()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+      </div>
+      <div class="flex-1 overflow-auto p-4">
+        <pre id="exportText" class="text-xs text-gray-700 whitespace-pre-wrap font-mono bg-gray-50 p-3 rounded-lg"></pre>
+      </div>
+      <div class="p-4 border-t">
+        <button onclick="copyExport()" class="w-full bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 rounded-lg text-sm">
+          クリップボードにコピー
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const sections = [
+      { id: 'background', label: '研究背景', limit: 800, placeholder: '研究の背景となる社会的・学術的文脈を記述してください。先行研究の現状と課題、本研究の必要性を説明します。' },
+      { id: 'purpose', label: '研究目的', limit: 400, placeholder: '本研究で達成しようとする具体的な目的・ゴールを記述してください。検証する仮説があれば明記します。' },
+      { id: 'methodology', label: '研究方法論', limit: 1000, placeholder: '研究の実施方法・アプローチを詳述してください。データ収集方法・分析手法・実験設計を含みます。' },
+      { id: 'outcomes', label: '期待される成果', limit: 500, placeholder: '本研究で期待される科学的・社会的成果を記述してください。学術論文・特許・実用化計画なども含みます。' },
+      { id: 'budget', label: '予算計画', limit: 600, placeholder: '研究費の内訳（人件費・材料費・旅費・設備費・間接費等）を記述してください。各費目の根拠も説明します。' },
+      { id: 'team', label: '研究チーム構成', limit: 400, placeholder: '主任研究者・共同研究者・研究協力者の役割と経歴を記述してください。各メンバーの専門分野と担当を明記します。' },
+    ];
+
+    const checklist = [
+      '研究背景に先行研究の引用が含まれている',
+      '研究目的が具体的かつ測定可能な形で記述されている',
+      '研究方法論に倫理審査への言及がある（該当する場合）',
+      '期待される成果が定量的・定性的の両面で記述されている',
+      '予算計画に間接費（オーバーヘッド）が含まれている',
+      '研究期間と各フェーズのスケジュールが明記されている',
+      '研究チームメンバー全員の役割が明確になっている',
+      '全セクションが字数制限内に収まっている',
+      '申請書の様式・フォーマット要件を満たしている',
+      '指定機関への提出期限を確認した',
+    ];
+
+    let content = {};
+    let checkState = {};
+    let currentSection = 'background';
+
+    function load() {
+      const saved = localStorage.getItem('grant-proposal');
+      if (saved) { try { content = JSON.parse(saved); } catch(e) {} }
+      const ck = localStorage.getItem('grant-checklist');
+      if (ck) { try { checkState = JSON.parse(ck); } catch(e) {} }
+      renderTabs();
+      renderSection(currentSection);
+    }
+
+    function save() {
+      localStorage.setItem('grant-proposal', JSON.stringify(content));
+    }
+
+    function renderTabs() {
+      const tabsEl = document.getElementById('sectionTabs');
+      tabsEl.innerHTML = '';
+      sections.forEach(s => {
+        const btn = document.createElement('button');
+        btn.className = 'flex-shrink-0 px-3 py-3 text-xs font-medium border-b-2 border-transparent text-gray-500 hover:text-sky-600 whitespace-nowrap ' +
+          (s.id === currentSection ? 'border-sky-500 text-sky-600 font-semibold' : '');
+        btn.textContent = s.label;
+        const sid = s.id;
+        btn.addEventListener('click', function() {
+          saveCurrentSection();
+          currentSection = sid;
+          renderTabs();
+          renderSection(sid);
+        });
+        tabsEl.appendChild(btn);
+      });
+    }
+
+    function saveCurrentSection() {
+      const ta = document.getElementById('sectionTextarea');
+      if (ta) {
+        content[currentSection] = ta.value;
+        save();
+      }
+    }
+
+    function renderSection(sid) {
+      const s = sections.find(x => x.id === sid);
+      const container = document.getElementById('sectionContent');
+      container.innerHTML = '';
+
+      const card = document.createElement('div');
+      card.className = 'bg-white rounded-2xl shadow p-5';
+
+      const header = document.createElement('div');
+      header.className = 'flex justify-between items-baseline mb-1';
+
+      const title = document.createElement('h2');
+      title.className = 'font-semibold text-gray-800';
+      title.textContent = s.label;
+
+      const limitInfo = document.createElement('span');
+      limitInfo.className = 'text-xs text-gray-400';
+      limitInfo.textContent = '上限 ' + s.limit + '文字';
+
+      header.appendChild(title);
+      header.appendChild(limitInfo);
+
+      const ta = document.createElement('textarea');
+      ta.id = 'sectionTextarea';
+      ta.rows = 10;
+      ta.className = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200 mt-2';
+      ta.placeholder = s.placeholder;
+      ta.value = content[sid] || '';
+
+      const counter = document.createElement('div');
+      counter.className = 'flex justify-end mt-1';
+
+      const countSpan = document.createElement('span');
+      countSpan.id = 'charCount';
+      countSpan.className = 'text-xs';
+
+      function updateCount() {
+        const len = ta.value.length;
+        countSpan.textContent = len + ' / ' + s.limit + ' 文字';
+        if (len > s.limit) {
+          countSpan.className = 'text-xs text-red-500 font-semibold';
+        } else if (len > s.limit * 0.9) {
+          countSpan.className = 'text-xs text-yellow-500 font-semibold';
+        } else {
+          countSpan.className = 'text-xs text-gray-400';
+        }
+        content[sid] = ta.value;
+        save();
+      }
+
+      ta.addEventListener('input', updateCount);
+      updateCount();
+
+      counter.appendChild(countSpan);
+
+      card.appendChild(header);
+      card.appendChild(ta);
+      card.appendChild(counter);
+
+      // Tips
+      const tipMap = {
+        background: 'ヒント: IMRaD構造の導入部として、研究の重要性を審査員に伝えましょう。',
+        purpose: 'ヒント: 「本研究の目的は〜を明らかにすることである」という明確な文で始めましょう。',
+        methodology: 'ヒント: 再現性が確認できるよう、手順を具体的に記述してください。',
+        outcomes: 'ヒント: 社会的インパクト・波及効果も記述すると評価が上がります。',
+        budget: 'ヒント: 間接費（通常は直接費の30%前後）を忘れずに計上してください。',
+        team: 'ヒント: 各メンバーの貢献比率（FTE）も明記するとよいでしょう。',
+      };
+      if (tipMap[sid]) {
+        const tip = document.createElement('p');
+        tip.className = 'text-xs text-sky-600 mt-2';
+        tip.textContent = '💡 ' + tipMap[sid];
+        card.appendChild(tip);
+      }
+
+      container.appendChild(card);
+    }
+
+    function showChecklist() {
+      const container = document.getElementById('checklistItems');
+      container.innerHTML = '';
+      checklist.forEach((item, i) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'flex items-start gap-3';
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.id = 'gck-' + i;
+        cb.className = 'mt-0.5 w-4 h-4 accent-sky-500';
+        cb.checked = !!checkState[i];
+        cb.addEventListener('change', function() {
+          checkState[i] = this.checked;
+          localStorage.setItem('grant-checklist', JSON.stringify(checkState));
+          const lbl = document.getElementById('gcklbl-' + i);
+          if (this.checked) lbl.classList.add('line-through', 'text-gray-400');
+          else lbl.classList.remove('line-through', 'text-gray-400');
+        });
+
+        const label = document.createElement('label');
+        label.htmlFor = 'gck-' + i;
+        label.id = 'gcklbl-' + i;
+        label.className = 'text-sm cursor-pointer ' + (checkState[i] ? 'line-through text-gray-400' : 'text-gray-700');
+        label.textContent = item;
+
+        wrap.appendChild(cb);
+        wrap.appendChild(label);
+        container.appendChild(wrap);
+      });
+      document.getElementById('checklistModal').classList.remove('hidden');
+    }
+
+    function closeChecklist() {
+      document.getElementById('checklistModal').classList.add('hidden');
+    }
+
+    function exportMarkdown() {
+      saveCurrentSection();
+      const lines = ['# 研究助成金申請書\n'];
+      sections.forEach(s => {
+        lines.push('## ' + s.label);
+        lines.push('');
+        lines.push(content[s.id] || '（未記入）');
+        lines.push('');
+      });
+      document.getElementById('exportText').textContent = lines.join('\n');
+      document.getElementById('exportModal').classList.remove('hidden');
+    }
+
+    function closeExport() {
+      document.getElementById('exportModal').classList.add('hidden');
+    }
+
+    function copyExport() {
+      const text = document.getElementById('exportText').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.querySelector('#exportModal .p-4.border-t button');
+        const orig = btn.textContent;
+        btn.textContent = 'コピーしました！';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+      });
+    }
+
+    load();
+  </script>
+</body>
+</html>
